@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum AlertType {
+  fire
+  gas
+  door
+}
+
+enum AlertLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum Platform {
+  web
+  android
+}
+
+enum RfidCardStatus {
+  ACTIVE
+  REVOKED
+}
+
+model User {
+  id           Int         @id @default(autoincrement())
+  username     String      @unique
+  passwordHash String
+  role         Role        @default(USER)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  alerts       Alert[]     @relation("AcknowledgedAlerts")
+  pushTokens   PushToken[]
+  rfidCard     RfidCard?   // One user can have one RFID card (1:1)
+  accessLogs   DoorAccessLog[]
+}
+
+model Alert {
+  id             Int        @id @default(autoincrement())
+  type           AlertType
+  level          AlertLevel
+  message        String
+  createdAt      DateTime   @default(now())
+  acknowledgedBy User?      @relation("AcknowledgedAlerts", fields: [acknowledgedById], references: [id])
+  acknowledgedById Int?
+}
+
+model AccessLog {
+  id        Int      @id @default(autoincrement())
+  eventType String
+  actor     String
+  timestamp DateTime @default(now())
+}
+
+model PushToken {
+  id       Int      @id @default(autoincrement())
+  userId   Int
+  token    String   @unique
+  platform Platform
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== Door Access Models ====================
+
+// Single door system - only one door record
+model Door {
+  id          String       @id @default(uuid())
+  name        String       @default("Main Door")
+  location    String?
+  pinHash     String       // SHA-256 hash of PIN
+  isOnline    Boolean      @default(false)
+  lastSeen    DateTime?
+  enrollmentMode Boolean   @default(false)  // Whether ESP32 is in enrollment mode
+  enrollmentUserId Int?    // User ID for pending enrollment
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  rfidCards   RfidCard[]
+  accessLogs  DoorAccessLog[]
+}
+
+// RFID card linked to user (1 user : 1 card, strict)
+model RfidCard {
+  id        Int            @id @default(autoincrement())
+  doorId    String
+  userId    Int            @unique  // One card per user (strict 1:1)
+  uid       String         @unique  // Original UID (for display)
+  uidHash   String         @unique  // SHA-256 hash (for auth)
+  status    RfidCardStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  door      Door           @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Access log with user reference
+model DoorAccessLog {
+  id        Int      @id @default(autoincrement())
+  doorId    String
+  userId    Int?     // User who attempted access (null if unknown card)
+  event     String   // access_granted, access_denied, alarm_triggered, enrollment_success, enrollment_failed
+  rfidUid   String?  // For display/debugging
+  method    String?  // rfid, pin, rfid_pin, invalid_rfid, invalid_pin, enrollment
+  timestamp DateTime @default(now())
+  door      Door     @relation(fields: [doorId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
