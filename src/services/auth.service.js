@@ -7,7 +7,7 @@ async function register({ username, password, role = 'USER' }) {
   if (existing) throw new Error('Username already exists');
 
   const passwordHash = await bcrypt.hash(password, 10);
-  
+
   const user = await prisma.user.create({
     data: { username, passwordHash, role },
     select: { id: true, username: true, role: true }
@@ -61,7 +61,7 @@ async function changePassword(userId, { currentPassword, newPassword }) {
   if (!valid) throw new Error('Mật khẩu hiện tại không đúng');
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  
+
   await prisma.user.update({
     where: { id: userId },
     data: { passwordHash }
