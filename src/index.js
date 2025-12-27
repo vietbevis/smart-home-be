@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./lib/prisma');
 const mqttService = require('./services/mqtt.service');
 const authRoutes = require('./routes/auth.routes');
 const alertRoutes = require('./routes/alert.routes');
@@ -11,7 +11,6 @@ const accessLogRoutes = require('./routes/accessLog.routes');
 const doorRoutes = require('./routes/door.routes');
 
 const app = express();
-const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());

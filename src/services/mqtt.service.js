@@ -23,10 +23,10 @@ const TOPICS = [
 ];
 
 function connect() {
-  const BROKER_URL = process.env.MQTT_BROKER_URL || "mqtt://emqx-mqtt.vittapcode.id.vn:1883";
+  const BROKER_URL = process.env.MQTT_BROKER_URL || "wss://emqx-ws.vittapcode.id.vn/mqtt";
 
   const options = {
-    clientId: "nodejs_backend_" + Math.random().toString(16).slice(2, 10),
+    clientId: "smart_home_backend_" + Math.random().toString(16).slice(2, 10),
     username: process.env.MQTT_USERNAME || "test",
     password: process.env.MQTT_PASSWORD || "viet",
     clean: true,
@@ -42,7 +42,7 @@ function connect() {
   client.on('connect', () => {
     console.log('MQTT connected');
     TOPICS.forEach(topic => client.subscribe(topic));
-    
+
     // Inject publish function into alert service for real-time alerts
     alertService.setMqttPublish(publish);
   });
@@ -133,7 +133,7 @@ async function handleDoorAccessMessage(topic, payload) {
 // Handle RFID scan during enrollment
 async function handleEnrollmentScan(payload) {
   const { uid } = payload;
-  
+
   if (!uid) {
     publish('door/enrollment/result', {
       success: false,
@@ -142,10 +142,10 @@ async function handleEnrollmentScan(payload) {
     });
     return;
   }
-  
+
   try {
     const result = await doorService.processEnrollmentScan(uid);
-    
+
     // Send result back to ESP32
     publish('door/enrollment/result', {
       success: result.success,
@@ -153,7 +153,7 @@ async function handleEnrollmentScan(payload) {
       username: result.card?.user?.username,
       timestamp: Date.now()
     });
-    
+
     // If successful, also update the whitelist
     if (result.success) {
       const whitelist = await doorService.getRfidWhitelist();
@@ -162,7 +162,7 @@ async function handleEnrollmentScan(payload) {
         whitelist,
         timestamp: Date.now()
       });
-      
+
       // Send push notification
       await pushService.sendToAll(
         '✅ Đăng ký thẻ RFID',
@@ -182,7 +182,7 @@ async function handleEnrollmentScan(payload) {
 // Handle RFID authentication request (normal usage)
 async function handleRfidAuth(payload) {
   const { uidHash, uid } = payload;
-  
+
   if (!uidHash && !uid) {
     publish('door/rfid/response', {
       allowed: false,
@@ -191,12 +191,12 @@ async function handleRfidAuth(payload) {
     });
     return;
   }
-  
+
   try {
     // Use uidHash if provided, otherwise hash the uid
     const hash = uidHash || doorService.sha256(uid.toUpperCase());
     const result = await doorService.authenticateRfid(hash);
-    
+
     // Send response to ESP32
     publish('door/rfid/response', {
       allowed: result.allowed,
@@ -205,7 +205,7 @@ async function handleRfidAuth(payload) {
       userId: result.userId,
       timestamp: Date.now()
     });
-    
+
     // Log the access attempt
     await doorService.createAccessLog({
       event: result.allowed ? 'access_granted' : 'access_denied',
@@ -213,7 +213,7 @@ async function handleRfidAuth(payload) {
       method: result.reason || 'rfid',
       userId: result.userId
     });
-    
+
     // Send notification for denied access
     if (!result.allowed && result.reason !== 'unknown_card') {
       await pushService.sendToAll(
@@ -255,16 +255,16 @@ async function handleGasAlert(payload) {
 
 async function handleDoorEvent(payload) {
   const { status, state, actor, abnormal } = payload;
-  
+
   // Use 'status' (from new format) or 'state' (from old format)
   const eventType = status || state;
-  
+
   if (eventType) {
     await alertService.createAccessLog({
       eventType: eventType,
       actor: actor || 'unknown'
     });
-    
+
     // Log door open/close events to DoorAccessLog for history
     const event = eventType === 'open' ? 'door_opened' : 'door_closed';
     await doorService.createAccessLog({

@@ -4,10 +4,8 @@
  */
 
 require('dotenv').config();
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./lib/prisma');
 const doorService = require('./services/door.service');
-
-const prisma = new PrismaClient();
 
 async function testLostCard() {
   console.log('🔐 Testing Lost Card Feature...\n');

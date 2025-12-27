@@ -6,4 +6,3 @@ prisma/*.db-journal
 
 # Firebase Admin SDK credentials (sensitive)
 firebase/
-*.json

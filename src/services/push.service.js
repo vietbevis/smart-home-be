@@ -1,8 +1,6 @@
 const admin = require('firebase-admin');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const path = require('path');
-
-const prisma = new PrismaClient();
 
 // Initialize Firebase Admin (lazy init)
 let firebaseInitialized = false;

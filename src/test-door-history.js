@@ -4,9 +4,7 @@
  */
 
 require('dotenv').config();
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('./lib/prisma');
 
 async function createTestDoorHistory() {
   console.log('🚪 Creating test door history events...\n');

@@ -7,9 +7,7 @@ require('dotenv').config();
 const pushService = require('./services/push.service');
 const alertService = require('./services/alert.service');
 const mqtt = require('mqtt');
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const prisma = require('./lib/prisma');
 
 async function testPushNotification() {
   console.log('🔔 Testing Push Notifications & Real-time Alerts...\n');
