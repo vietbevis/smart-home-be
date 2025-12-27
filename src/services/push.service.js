@@ -7,12 +7,12 @@ let firebaseInitialized = false;
 
 function initFirebase() {
   if (firebaseInitialized) return true;
-  
+
   try {
     // Try to use JSON file first
     const serviceAccountPath = path.join(__dirname, '../../firebase/smarthome-babad-firebase-adminsdk-fbsvc-4ed7c28b0a.json');
     const serviceAccount = require(serviceAccountPath);
-    
+
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
@@ -24,10 +24,28 @@ function initFirebase() {
     // Fallback to env variables
     if (process.env.FIREBASE_PROJECT_ID) {
       try {
+        // Handle private key - support both base64 encoded (for Docker) and plain text
+        let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+        // If base64 encoded version exists (recommended for Docker), decode it
+        if (process.env.FIREBASE_PRIVATE_KEY_B64) {
+          try {
+            privateKey = Buffer.from(process.env.FIREBASE_PRIVATE_KEY_B64, 'base64').toString('utf-8');
+          } catch (decodeError) {
+            console.error('❌ Failed to decode FIREBASE_PRIVATE_KEY_B64:', decodeError.message);
+            throw new Error('Invalid base64 encoded private key');
+          }
+        }
+
+        // Replace escaped newlines if present
+        if (privateKey) {
+          privateKey = privateKey.replace(/\\n/g, '\n');
+        }
+
         admin.initializeApp({
           credential: admin.credential.cert({
             projectId: process.env.FIREBASE_PROJECT_ID,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+            privateKey: privateKey,
             clientEmail: process.env.FIREBASE_CLIENT_EMAIL
           })
         });
@@ -99,7 +117,7 @@ async function sendToAll(title, body) {
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`FCM sent: ${response.successCount} success, ${response.failureCount} failed`);
-    
+
     // Log failures and remove invalid tokens
     if (response.failureCount > 0) {
       const failedTokens = [];
@@ -108,12 +126,12 @@ async function sendToAll(title, body) {
           console.log(`  ❌ Token ${idx} failed:`, resp.error?.code, resp.error?.message);
           // Remove invalid tokens
           if (resp.error?.code === 'messaging/invalid-registration-token' ||
-              resp.error?.code === 'messaging/registration-token-not-registered') {
+            resp.error?.code === 'messaging/registration-token-not-registered') {
             failedTokens.push(tokens[idx].id);
           }
         }
       });
-      
+
       // Clean up invalid tokens
       if (failedTokens.length > 0) {
         await prisma.pushToken.deleteMany({
