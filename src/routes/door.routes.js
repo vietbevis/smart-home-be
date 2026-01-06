@@ -32,12 +32,17 @@ router.get('/config', authenticate, async (req, res) => {
 // Update PIN (Admin only)
 router.patch('/pin', authenticate, authorize('ADMIN'), async (req, res) => {
   try {
-    const { pin } = req.body;
-    if (!pin || pin.length !== 4 || !/^\d+$/.test(pin)) {
-      return res.status(400).json({ error: 'PIN phải là 4 chữ số' });
+    const { pin, currentPin } = req.body;
+    
+    if (!currentPin || currentPin.length !== 4 || !/^\d+$/.test(currentPin)) {
+      return res.status(400).json({ error: 'Mã PIN hiện tại phải là 4 chữ số' });
     }
     
-    const door = await doorService.updateDoorPin(pin);
+    if (!pin || pin.length !== 4 || !/^\d+$/.test(pin)) {
+      return res.status(400).json({ error: 'Mã PIN mới phải là 4 chữ số' });
+    }
+    
+    const door = await doorService.updateDoorPin(pin, currentPin);
     
     // Publish to ESP32 via MQTT
     const pinHash = doorService.sha256(pin);
@@ -47,8 +52,27 @@ router.patch('/pin', authenticate, authorize('ADMIN'), async (req, res) => {
       timestamp: Date.now()
     });
     
+    // Create alert for PIN change
+    const alertService = require('../services/alert.service');
+    await alertService.createAlert({
+      type: 'door',
+      level: 'INFO',
+      message: `Mã PIN cửa đã được thay đổi bởi ${req.user.username}`
+    });
+    
+    // Send push notification
+    const pushService = require('../services/push.service');
+    await pushService.sendToAll(
+      'Mã PIN cửa đã thay đổi',
+      `${req.user.username} đã thay đổi mã PIN cửa`
+    );
+    
     res.json({ message: 'Đã cập nhật PIN', doorId: door.id });
   } catch (error) {
+    // Return 401 for wrong current PIN
+    if (error.message === 'Mã PIN hiện tại không đúng') {
+      return res.status(401).json({ error: error.message });
+    }
     res.status(400).json({ error: error.message });
   }
 });

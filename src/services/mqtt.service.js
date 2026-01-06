@@ -16,7 +16,7 @@ const TOPICS = [
   'door/alarm',
   'door/status',
   // RFID enrollment topics
-  'door/enrollment/scan',
+  'door/rfid/check',
   'door/rfid/auth',
   // Enrollment result (for logging)
   'door/enrollment/result'
@@ -119,10 +119,17 @@ async function handleDoorAccessMessage(topic, payload) {
     await doorService.updateDoorStatus(payload.online);
     deviceLastSeen.set('door', Date.now());
   }
-  // ==================== RFID Enrollment Handlers ====================
-  else if (topic === 'door/enrollment/scan') {
-    // ESP32 scanned a card during enrollment mode
-    await handleEnrollmentScan(payload);
+  // ==================== RFID Handlers ====================
+  else if (topic === 'door/rfid/check') {
+    // Check if in enrollment mode first
+    const enrollmentStatus = await doorService.getEnrollmentStatus();
+    if (enrollmentStatus.active) {
+      // Enrollment mode - register new card
+      await handleEnrollmentScan(payload);
+    } else {
+      // Normal mode - authenticate card
+      await handleRfidAuth(payload);
+    }
   }
   else if (topic === 'door/rfid/auth') {
     // ESP32 requesting RFID authentication (normal usage)
@@ -133,6 +140,8 @@ async function handleDoorAccessMessage(topic, payload) {
 // Handle RFID scan during enrollment
 async function handleEnrollmentScan(payload) {
   const { uid } = payload;
+  
+  console.log('📥 handleEnrollmentScan called with UID:', uid);
 
   if (!uid) {
     publish('door/enrollment/result', {
@@ -144,7 +153,12 @@ async function handleEnrollmentScan(payload) {
   }
 
   try {
+    // Check enrollment status first
+    const enrollmentStatus = await doorService.getEnrollmentStatus();
+    console.log('📋 Enrollment status:', enrollmentStatus);
+    
     const result = await doorService.processEnrollmentScan(uid);
+    console.log('📋 processEnrollmentScan result:', result);
 
     // Send result back to ESP32
     publish('door/enrollment/result', {
@@ -184,8 +198,9 @@ async function handleRfidAuth(payload) {
   const { uidHash, uid } = payload;
 
   if (!uidHash && !uid) {
-    publish('door/rfid/response', {
-      allowed: false,
+    publish('door/rfid/result', {
+      uid: uid || '',
+      allow: false,
       reason: 'invalid_request',
       timestamp: Date.now()
     });
@@ -197,12 +212,12 @@ async function handleRfidAuth(payload) {
     const hash = uidHash || doorService.sha256(uid.toUpperCase());
     const result = await doorService.authenticateRfid(hash);
 
-    // Send response to ESP32
-    publish('door/rfid/response', {
-      allowed: result.allowed,
+    // Send response to ESP32 (topic: door/rfid/result)
+    publish('door/rfid/result', {
+      uid: uid,
+      allow: result.allowed,
+      username: result.username || 'Unknown',
       reason: result.reason,
-      username: result.username,
-      userId: result.userId,
       timestamp: Date.now()
     });
 
@@ -223,8 +238,9 @@ async function handleRfidAuth(payload) {
     }
   } catch (error) {
     console.error('RFID auth error:', error);
-    publish('door/rfid/response', {
-      allowed: false,
+    publish('door/rfid/result', {
+      uid: payload.uid || '',
+      allow: false,
       reason: 'server_error',
       timestamp: Date.now()
     });

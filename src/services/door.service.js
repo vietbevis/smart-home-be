@@ -36,8 +36,15 @@ async function getDoor() {
   });
 }
 
-async function updateDoorPin(newPin) {
+async function updateDoorPin(newPin, currentPin) {
   const door = await getOrCreateDoor();
+  
+  // Validate current PIN
+  const currentPinHash = sha256(currentPin);
+  if (door.pinHash !== currentPinHash) {
+    throw new Error('Mã PIN hiện tại không đúng');
+  }
+  
   const pinHash = sha256(newPin);
   
   return prisma.door.update({
@@ -119,17 +126,18 @@ async function processEnrollmentScan(uid) {
   const uidUpper = uid.toUpperCase();
   const uidHash = sha256(uidUpper);
   
-  // Check if UID already exists and belongs to another user
-  const existingCard = await prisma.rfidCard.findFirst({
+  // Check if UID already exists and belongs to another ACTIVE user
+  const existingCardWithUid = await prisma.rfidCard.findFirst({
     where: { 
       uidHash,
-      status: 'ACTIVE'
+      status: 'ACTIVE',
+      userId: { not: userId }
     },
     include: { user: true }
   });
   
-  if (existingCard && existingCard.userId !== userId) {
-    // UID belongs to another user
+  if (existingCardWithUid) {
+    // UID belongs to another active user
     await prisma.door.update({
       where: { id: door.id },
       data: { enrollmentMode: false, enrollmentUserId: null }
@@ -137,14 +145,18 @@ async function processEnrollmentScan(uid) {
     
     return { 
       success: false, 
-      error: `Thẻ đã được gán cho ${existingCard.user.username}` 
+      error: `Thẻ đã được gán cho ${existingCardWithUid.user.username}` 
     };
   }
   
-  // Revoke user's existing card if any
-  await prisma.rfidCard.updateMany({
-    where: { userId, status: 'ACTIVE' },
-    data: { status: 'REVOKED' }
+  // Delete any existing card with this UID (revoked cards from other users)
+  await prisma.rfidCard.deleteMany({
+    where: { uidHash, userId: { not: userId } }
+  });
+  
+  // Delete current user's old card if exists (to avoid unique constraint)
+  await prisma.rfidCard.deleteMany({
+    where: { userId }
   });
   
   // Create new card
